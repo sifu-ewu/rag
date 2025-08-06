@@ -1,10 +1,12 @@
 """
-Configuration settings for the Multilingual RAG System
+Enhanced Configuration settings for the Professional Multilingual RAG System
 """
 import os
-from typing import Optional
+import json
+from typing import Optional, List, Dict, Any
 from pathlib import Path
 from dotenv import load_dotenv
+import logging
 
 # Load environment variables
 load_dotenv()
@@ -70,13 +72,94 @@ class Config:
     # Evaluation Configuration
     EVAL_METRICS = ["rouge", "bleu", "bert_score", "semantic_similarity"]
     
+    # Security Configuration
+    JWT_SECRET_KEY: Optional[str] = os.getenv("JWT_SECRET_KEY")
+    ADMIN_API_KEY: Optional[str] = os.getenv("ADMIN_API_KEY")
+    API_KEYS: List[Dict] = []
+    
+    # Cache Configuration
+    REDIS_URL: Optional[str] = os.getenv("REDIS_URL")
+    CACHE_TTL: int = int(os.getenv("CACHE_TTL", "3600"))  # 1 hour
+    ENABLE_CACHING: bool = os.getenv("ENABLE_CACHING", "true").lower() == "true"
+    
+    # Monitoring Configuration
+    ENABLE_METRICS: bool = os.getenv("ENABLE_METRICS", "true").lower() == "true"
+    METRICS_PORT: int = int(os.getenv("METRICS_PORT", "9090"))
+    SENTRY_DSN: Optional[str] = os.getenv("SENTRY_DSN")
+    
+    # Performance Configuration
+    MAX_CONCURRENT_REQUESTS: int = int(os.getenv("MAX_CONCURRENT_REQUESTS", "100"))
+    REQUEST_TIMEOUT: int = int(os.getenv("REQUEST_TIMEOUT", "300"))  # 5 minutes
+    ENABLE_GPU: bool = os.getenv("ENABLE_GPU", "true").lower() == "true"
+    
+    # Database Configuration
+    DATABASE_URL: Optional[str] = os.getenv("DATABASE_URL")
+    DB_POOL_SIZE: int = int(os.getenv("DB_POOL_SIZE", "10"))
+    
+    # Environment Configuration
+    ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
+    DEBUG: bool = os.getenv("DEBUG", "false").lower() == "true"
+    
+    @classmethod
+    def load_api_keys_from_file(cls, file_path: str):
+        """Load API keys from JSON file"""
+        try:
+            with open(file_path, 'r') as f:
+                cls.API_KEYS = json.load(f)
+        except FileNotFoundError:
+            logging.warning(f"API keys file not found: {file_path}")
+        except json.JSONDecodeError:
+            logging.error(f"Invalid JSON in API keys file: {file_path}")
+    
+    @classmethod
+    def is_production(cls) -> bool:
+        """Check if running in production"""
+        return cls.ENVIRONMENT.lower() == "production"
+    
+    @classmethod
+    def is_development(cls) -> bool:
+        """Check if running in development"""
+        return cls.ENVIRONMENT.lower() == "development"
+    
     @classmethod
     def validate_config(cls) -> bool:
-        """Validate essential configuration"""
+        """Enhanced configuration validation"""
+        errors = []
+        
+        # Validate LLM configuration
         if not cls.OPENAI_API_KEY and cls.LLM_MODEL.startswith("gpt"):
-            print("Warning: OpenAI API key not found for GPT model")
+            errors.append("OpenAI API key not found for GPT model")
+        
+        # Validate production requirements
+        if cls.is_production():
+            if not cls.JWT_SECRET_KEY:
+                errors.append("JWT_SECRET_KEY required in production")
+            if not cls.ADMIN_API_KEY:
+                errors.append("ADMIN_API_KEY required in production")
+            if cls.DEBUG:
+                errors.append("DEBUG should be False in production")
+        
+        # Validate database configuration
+        if cls.DATABASE_URL and not cls.DATABASE_URL.startswith(('postgresql://', 'mysql://', 'sqlite://')):
+            errors.append("Invalid DATABASE_URL format")
+        
+        # Log errors and return result
+        if errors:
+            for error in errors:
+                logging.error(f"Configuration error: {error}")
             return False
+        
+        logging.info("Configuration validation passed")
         return True
+    
+    @classmethod
+    def get_settings_dict(cls) -> Dict[str, Any]:
+        """Get all configuration as dictionary"""
+        return {
+            attr: getattr(cls, attr)
+            for attr in dir(cls)
+            if not attr.startswith('_') and not callable(getattr(cls, attr))
+        }
 
 # Global config instance
 config = Config() 
